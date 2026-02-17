@@ -20,32 +20,24 @@ let statsCache = {
 // Function to scrape owockibot stats (fallback to cached values if scraping fails)
 async function getOwockibotStats() {
   try {
-    // Try to get fresh data, but fallback to cache if it fails
-    const response = await axios.get('https://www.owockibot.xyz/bounty', {
-      timeout: 5000
-    });
+    // Use the API directly instead of scraping (JS-rendered page can't be parsed with cheerio)
+    const [allRes, openRes] = await Promise.all([
+      axios.get('https://www.owockibot.xyz/api/bounty-board', { timeout: 5000 }),
+      axios.get('https://www.owockibot.xyz/api/bounty-board?status=open', { timeout: 5000 })
+    ]);
     
-    // Parse with cheerio if we can get the HTML
-    const $ = cheerio.load(response.data);
+    const allBounties = Array.isArray(allRes.data) ? allRes.data : (allRes.data.bounties || []);
+    const openBounties = Array.isArray(openRes.data) ? openRes.data : (openRes.data.bounties || []);
+    const completedBounties = allBounties.filter(b => b.status === 'completed' || b.status === 'paid');
+    const totalVolume = completedBounties.reduce((sum, b) => sum + (parseFloat(b.reward) || 0), 0);
     
-    // Try to extract stats from the page
-    const statsText = $('body').text();
-    
-    // Look for patterns like "33 Total Bounties 0 Open 9 Completed $125.00 USDC Volume"
-    const totalMatch = statsText.match(/(\d+)\s+Total\s+Bounties/i);
-    const openMatch = statsText.match(/(\d+)\s+Open/i);
-    const completedMatch = statsText.match(/(\d+)\s+Completed/i);
-    const volumeMatch = statsText.match(/\$(\d+\.?\d*)\s+USDC\s+Volume/i);
-    
-    if (totalMatch || openMatch || completedMatch || volumeMatch) {
-      statsCache = {
-        totalBounties: totalMatch ? parseInt(totalMatch[1]) : statsCache.totalBounties,
-        openBounties: openMatch ? parseInt(openMatch[1]) : statsCache.openBounties,
-        completedBounties: completedMatch ? parseInt(completedMatch[1]) : statsCache.completedBounties,
-        usdcVolume: volumeMatch ? parseFloat(volumeMatch[1]) : statsCache.usdcVolume,
-        lastUpdated: Date.now()
-      };
-    }
+    statsCache = {
+      totalBounties: allBounties.length,
+      openBounties: openBounties.length,
+      completedBounties: completedBounties.length,
+      usdcVolume: totalVolume || statsCache.usdcVolume,
+      lastUpdated: Date.now()
+    };
   } catch (error) {
     console.log('Error fetching owockibot stats, using cached data:', error.message);
   }
